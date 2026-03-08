@@ -51,7 +51,7 @@ def summarize_email(msg):
 @tool
 def sort_emails(msg):
     """Sort emails by priority."""
-    # For simplicity, let's sort emails by the presence of "urgent" in the subject
+    # Sort emails based on sender and body content
     subject = msg['payload']['headers'][0]['value']
     body = base64.urlsafe_b64decode(msg['payload']['parts'][0]['body']['data']).decode('utf-8')
     
