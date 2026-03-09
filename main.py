@@ -1,6 +1,11 @@
-# import gmail authentication function from file_handler.py
-from agent.file_handler import authenticate_gmail
+#Import agent from assistant.py and execute the agent
+from agent.assistant import create_agent
 
-# Authenticate with Gmail 
-service = authenticate_gmail()
-print("Gmail authenticated successfully.")
+# Create the agent and execute it to handle user interactions and perform tasks
+agent = create_agent()
+
+user_input = input("How can I assist you with your emails today? ")
+agent.invoke({"messages": [{"role": "user", "content": user_input}]})
+
+response = agent.invoke({"messages": [{"role": "user", "content": user_input}]})
+print(response['messages'][-1].content)
