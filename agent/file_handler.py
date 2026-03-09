@@ -15,8 +15,14 @@ def authenticate_gmail():
 
     # If there are no valid credentials available, let the user log in.
     if not creds or not creds.valid:
-        flow = InstalledAppFlow.from_client_secrets_file('credentials.json', SCOPES)
-        creds = flow.run_local_server(port=0)
+        if creds and creds.expired and creds.refresh_token:
+        # Refresh the token if it has expired
+            from google.auth.transport.requests import Request
+            creds.refresh(Request())
+        else:
+            # Run the full login flow if no valid credentials exist
+            flow = InstalledAppFlow.from_client_secrets_file('credentials.json', SCOPES)
+            creds = flow.run_local_server(port=0, prompt='consent')
 
     # Save the credentials for the next run
     with open('token.json', 'w') as token:
