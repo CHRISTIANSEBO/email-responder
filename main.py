@@ -15,7 +15,10 @@ conversation_file = f"conversations/{session_start}.txt"
 conversation_log = []
 
 # Main interaction loop
-print("Email assistant ready. Type 'exit' or 'quit' to stop.\n")
+print("=" * 50)
+print("  Hi, I'm Jean — your personal email assistant.")
+print("  Type 'exit', 'quit', or 'bye' to stop.")
+print("=" * 50 + "\n")
 while True:
     user_input = input("You: ").strip()
     if not user_input:
@@ -26,7 +29,7 @@ while True:
                 for entry in conversation_log:
                     f.write(entry)
             print(f"Conversation saved to: {conversation_file}")
-        print("Goodbye!")
+        print("Jean: Talk soon!")
         break
 
     response = agent.invoke(
@@ -34,7 +37,7 @@ while True:
         config=config
     )
     output = response['messages'][-1].content
-    print(f"\nAssistant: {output}\n")
+    print(f"\nJean: {output}\n")
 
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     conversation_log.append(f"[{timestamp}]\nYou: {user_input}\n\nAssistant: {output}\n\n")
