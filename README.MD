@@ -9,7 +9,7 @@ Managing a busy inbox is time-consuming and kills productivity, especially when 
 This agent automatically reads incoming emails, sorts them by priority, summarizes their contents, and drafts intelligent responses using Claude — all through the Gmail API.
 
 ## Tech Stack
-- **LLM:** Anthropic Claude (claude-sonnet)
+- **LLM:** Anthropic Claude (claude-sonnet-4-6)
 - **Agent Framework:** LangChain
 - **Email API:** Gmail API (Google OAuth 2.0)
 - **Language:** Python
