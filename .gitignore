@@ -1,5 +1,6 @@
 .env
 __pycache__/
 .vscode/
+conversations/
 credentials.json
 token.json
