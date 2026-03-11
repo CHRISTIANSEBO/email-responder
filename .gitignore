@@ -1,6 +1,18 @@
+# Environment
 .env
-__pycache__/
-.vscode/
-conversations/
+venv/
+
+# Secrets
 credentials.json
 token.json
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Editor
+.vscode/
+
+# App data
+conversations/
