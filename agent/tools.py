@@ -1,11 +1,32 @@
 # This file defines tools for the email responder agent.
 from langchain.tools import tool
 from email.mime.text import MIMEText
-import base64 
+import base64
+import re
 from agent.file_handler import authenticate_gmail
 
+
+def _extract_body(payload: dict) -> str:
+    """Recursively extract plain-text body from a Gmail message payload."""
+    mime_type = payload.get('mimeType', '')
+    if mime_type == 'text/plain':
+        data = payload.get('body', {}).get('data', '')
+        return base64.urlsafe_b64decode(data + '==').decode('utf-8', errors='replace') if data else ''
+    if 'parts' in payload:
+        # Prefer text/plain; fall back to text/html
+        plain = next((p for p in payload['parts'] if p.get('mimeType') == 'text/plain'), None)
+        part = plain or next((p for p in payload['parts'] if p.get('mimeType') == 'text/html'), None)
+        if part:
+            return _extract_body(part)
+    return ''
+
 # Authenticate with Gmail once and reuse the service object for all tools
-service = authenticate_gmail()
+try:
+    service = authenticate_gmail()
+except FileNotFoundError as e:
+    raise SystemExit(f"Authentication error: {e}")
+except Exception as e:
+    raise SystemExit(f"Failed to authenticate with Gmail: {e}")
 
 
 # Define a tool to read the latest 10 emails from Gmail
@@ -21,17 +42,21 @@ def read_email():
         msg_data = service.users().messages().get(userId='me', id=msg['id'], format='full').execute()
         headers = msg_data['payload']['headers']
         emails.append({
-            'subject': next((header['value'] for header in headers if header['name'] == 'Subject'), '(no subject)'),
-            'sender': next((header['value'] for header in headers if header['name'] == 'From'), '(unknown)'),
-            'snippet': msg_data.get('snippet', '')
+            'subject': next((h['value'] for h in headers if h['name'] == 'Subject'), '(no subject)'),
+            'sender': next((h['value'] for h in headers if h['name'] == 'From'), '(unknown)'),
+            'body': _extract_body(msg_data['payload']),
         })
 
     return emails
 
 # Define a tool to send an email using Gmail
+_EMAIL_RE = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
+
 @tool
 def send_email(to, subject, body):
     """send an email using gmail."""
+    if not _EMAIL_RE.match(to):
+        return f"Invalid recipient email address: {to}"
     # Create the email message
     message = MIMEText(body)
     message['to'] = to
@@ -46,7 +71,7 @@ def send_email(to, subject, body):
 @tool
 def summarize_email(msg: dict):
     """Summarize the content of an email."""
-    return f"Subject: {msg['subject']}\nFrom: {msg['sender']}\nSummary: {msg['snippet']}"
+    return f"Subject: {msg['subject']}\nFrom: {msg['sender']}\nBody: {msg['body']}"
 
 # Define a tool to sort emails by priority
 URGENT_KEYWORDS = ['urgent', 'asap', 'important', 'action required', 'deadline', 'critical', 'immediately']
@@ -63,20 +88,20 @@ def sort_emails():
         headers = msg_data['payload']['headers']
         subject = next((h['value'] for h in headers if h['name'] == 'Subject'), '(no subject)')
         sender = next((h['value'] for h in headers if h['name'] == 'From'), '(unknown)')
-        snippet = msg_data.get('snippet', '')
-        text = (subject + ' ' + snippet).lower()
+        body = _extract_body(msg_data['payload'])
+        text = (subject + ' ' + body).lower()
         priority = sum(1 for kw in URGENT_KEYWORDS if kw in text)
-        emails.append({'subject': subject, 'sender': sender, 'snippet': snippet, 'priority': priority})
+        emails.append({'subject': subject, 'sender': sender, 'body': body, 'priority': priority})
 
     emails.sort(key=lambda e: e['priority'], reverse=True)
     return emails
 
 # Define a tool to unsubscribe from an email sender
-import re
-
 @tool
 def unsubscribe_from_email(sender_email: str):
     """Unsubscribe from a sender by finding the List-Unsubscribe header in their latest email and sending an unsubscribe request."""
+    if not _EMAIL_RE.match(sender_email):
+        return f"Invalid sender email address: {sender_email}"
     try:
         results = service.users().messages().list(userId='me', q=f'from:{sender_email}', maxResults=1).execute()
         messages = results.get('messages', [])
