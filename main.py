@@ -3,6 +3,7 @@ from datetime import datetime
 from langgraph.checkpoint.memory import MemorySaver
 from agent.assistant import create_agent
 
+# Initialize the agent with a memory saver for conversation history
 checkpointer = MemorySaver()
 agent = create_agent(checkpointer=checkpointer)
 config = {"configurable": {"thread_id": "default"}}
@@ -13,6 +14,7 @@ session_start = datetime.now().strftime("%Y%m%d_%H%M%S")
 conversation_file = f"conversations/{session_start}.txt"
 conversation_log = []
 
+# Main interaction loop
 print("Email assistant ready. Type 'exit' or 'quit' to stop.\n")
 while True:
     user_input = input("You: ").strip()
