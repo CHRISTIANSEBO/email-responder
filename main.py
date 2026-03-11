@@ -1,11 +1,38 @@
-#Import agent from assistant.py and execute the agent
+import os
+from datetime import datetime
+from langgraph.checkpoint.memory import MemorySaver
 from agent.assistant import create_agent
 
-# Create the agent and execute it to handle user interactions and perform tasks
-agent = create_agent()
+checkpointer = MemorySaver()
+agent = create_agent(checkpointer=checkpointer)
+config = {"configurable": {"thread_id": "default"}}
 
-user_input = input("How can I assist you with your emails today? ")
-agent.invoke({"messages": [{"role": "user", "content": user_input}]})
+os.makedirs("conversations", exist_ok=True)
 
-response = agent.invoke({"messages": [{"role": "user", "content": user_input}]})
-print(response['messages'][-1].content)
+session_start = datetime.now().strftime("%Y%m%d_%H%M%S")
+conversation_file = f"conversations/{session_start}.txt"
+conversation_log = []
+
+print("Email assistant ready. Type 'exit' or 'quit' to stop.\n")
+while True:
+    user_input = input("You: ").strip()
+    if not user_input:
+        continue
+    if user_input.lower() in ("exit", "quit", "bye"):
+        if conversation_log:
+            with open(conversation_file, "w", encoding="utf-8") as f:
+                for entry in conversation_log:
+                    f.write(entry)
+            print(f"Conversation saved to: {conversation_file}")
+        print("Goodbye!")
+        break
+
+    response = agent.invoke(
+        {"messages": [{"role": "user", "content": user_input}]},
+        config=config
+    )
+    output = response['messages'][-1].content
+    print(f"\nAssistant: {output}\n")
+
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    conversation_log.append(f"[{timestamp}]\nYou: {user_input}\n\nAssistant: {output}\n\n")
