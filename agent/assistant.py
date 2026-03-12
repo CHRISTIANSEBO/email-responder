@@ -3,7 +3,7 @@ import os
 from dotenv import load_dotenv
 from langchain_anthropic import ChatAnthropic
 from langgraph.prebuilt import create_react_agent
-from agent.tools import read_email, send_email, sort_emails, unsubscribe_from_email, open_email
+from agent.tools import read_email, send_email, sort_emails, unsubscribe_from_email, open_email, summarize_email
 
 load_dotenv()
 
@@ -22,11 +22,11 @@ Always refer to yourself as Jean."""
 def create_agent(checkpointer=None):
     """Create and return a LangGraph ReAct agent."""
     llm = ChatAnthropic(
-        model="claude-sonnet-4-6",
+        model="claude-haiku-4-5",
         api_key=os.getenv("ANTHROPIC_API_KEY")
     )
 
-    tools = [read_email, send_email, sort_emails, unsubscribe_from_email, open_email]
+    tools = [read_email, send_email, sort_emails, unsubscribe_from_email, open_email, summarize_email]
 
     # Create a ReAct agent using LangGraph
     agent = create_react_agent(llm, tools, prompt=SYSTEM_PROMPT, checkpointer=checkpointer)
