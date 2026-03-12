@@ -3,51 +3,107 @@ from langchain.tools import tool
 from email.mime.text import MIMEText
 import base64
 import re
-from agent.file_handler import authenticate_gmail
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from googleapiclient.discovery import build as _build_service
+from agent.file_handler import _load_credentials
+
+# Load credentials once at startup. Building a new httplib2-backed service
+# per thread is thread-safe; sharing one service across threads is not.
+_credentials = _load_credentials()
+_thread_local = threading.local()
+
+def _get_service():
+    """Return a thread-local Gmail service built from the shared credentials."""
+    if not hasattr(_thread_local, 'service'):
+        _thread_local.service = _build_service('gmail', 'v1', credentials=_credentials)
+    return _thread_local.service
 
 
 def _extract_body(payload: dict) -> str:
     """Recursively extract plain-text body from a Gmail message payload."""
     mime_type = payload.get('mimeType', '')
-    if mime_type == 'text/plain':
+    if mime_type in ('text/plain', 'text/html'):
         data = payload.get('body', {}).get('data', '')
         return base64.urlsafe_b64decode(data + '==').decode('utf-8', errors='replace') if data else ''
     if 'parts' in payload:
-        # Prefer text/plain; fall back to text/html
+        # Prefer text/plain; fall back to text/html; then recurse into nested multipart
         plain = next((p for p in payload['parts'] if p.get('mimeType') == 'text/plain'), None)
-        part = plain or next((p for p in payload['parts'] if p.get('mimeType') == 'text/html'), None)
-        if part:
-            return _extract_body(part)
+        if plain:
+            return _extract_body(plain)
+        html = next((p for p in payload['parts'] if p.get('mimeType') == 'text/html'), None)
+        if html:
+            return _extract_body(html)
+        for part in payload['parts']:
+            result = _extract_body(part)
+            if result:
+                return result
     return ''
 
-# Authenticate with Gmail once and reuse the service object for all tools
-try:
-    service = authenticate_gmail()
-except FileNotFoundError as e:
-    raise SystemExit(f"Authentication error: {e}")
-except Exception as e:
-    raise SystemExit(f"Failed to authenticate with Gmail: {e}")
+
+
+def _fetch_one(msg_id: str) -> dict:
+    """Fetch full email (with body) for a single message ID."""
+    svc = _get_service()
+    msg_data = svc.users().messages().get(userId='me', id=msg_id, format='full').execute()
+    headers = msg_data['payload']['headers']
+    return {
+        'subject': next((h['value'] for h in headers if h['name'] == 'Subject'), '(no subject)'),
+        'sender': next((h['value'] for h in headers if h['name'] == 'From'), '(unknown)'),
+        'body': _extract_body(msg_data['payload']),
+    }
+
+
+def _fetch_one_headers(msg_id: str) -> dict:
+    """Fetch subject and sender only (no body) for a single message ID."""
+    svc = _get_service()
+    msg_data = svc.users().messages().get(
+        userId='me', id=msg_id, format='metadata',
+        metadataHeaders=['Subject', 'From']
+    ).execute()
+    headers = msg_data['payload']['headers']
+    return {
+        'subject': next((h['value'] for h in headers if h['name'] == 'Subject'), '(no subject)'),
+        'sender': next((h['value'] for h in headers if h['name'] == 'From'), '(unknown)'),
+    }
+
+
+def _fetch_emails(max_results: int = 10) -> list:
+    """Fetch the latest emails (with bodies) from Gmail in parallel."""
+    results = _get_service().users().messages().list(userId='me', maxResults=max_results).execute()
+    msg_ids = [m['id'] for m in results.get('messages', [])]
+    if not msg_ids:
+        return []
+    with ThreadPoolExecutor(max_workers=min(len(msg_ids), 10)) as executor:
+        futures = {executor.submit(_fetch_one, mid): mid for mid in msg_ids}
+        return [f.result() for f in as_completed(futures)]
+
+
+def _fetch_email_headers(max_results: int = 10) -> list:
+    """Fetch subject and sender only for the latest emails in parallel."""
+    results = _get_service().users().messages().list(userId='me', maxResults=max_results).execute()
+    msg_ids = [m['id'] for m in results.get('messages', [])]
+    if not msg_ids:
+        return []
+    with ThreadPoolExecutor(max_workers=min(len(msg_ids), 10)) as executor:
+        futures = {executor.submit(_fetch_one_headers, mid): mid for mid in msg_ids}
+        return [f.result() for f in as_completed(futures)]
 
 
 # Define a tool to read the latest 10 emails from Gmail
+VALID_CATEGORIES = ('primary', 'promotions', 'social', 'updates', 'forums')
+
 @tool
-def read_email():
-    """read the latest 10 emails from gmail."""
-    results = service.users().messages().list(userId='me', maxResults=10).execute()
-    messages = results.get('messages', [])
-
-    # Fetch the full email data for each message
-    emails = []
-    for msg in messages:
-        msg_data = service.users().messages().get(userId='me', id=msg['id'], format='full').execute()
-        headers = msg_data['payload']['headers']
-        emails.append({
-            'subject': next((h['value'] for h in headers if h['name'] == 'Subject'), '(no subject)'),
-            'sender': next((h['value'] for h in headers if h['name'] == 'From'), '(unknown)'),
-            'body': _extract_body(msg_data['payload']),
-        })
-
-    return emails
+def read_email(category: str = ''):
+    """Read the latest 10 emails from Gmail. Optionally filter by inbox category: primary, promotions, social, updates, or forums. Returns subject and sender only. Use open_email to read a full message body."""
+    query = f'in:category:{category}' if category in VALID_CATEGORIES else ''
+    results = _get_service().users().messages().list(userId='me', maxResults=10, q=query).execute()
+    msg_ids = [m['id'] for m in results.get('messages', [])]
+    if not msg_ids:
+        return []
+    with ThreadPoolExecutor(max_workers=min(len(msg_ids), 10)) as executor:
+        futures = {executor.submit(_fetch_one_headers, mid): mid for mid in msg_ids}
+        return [f.result() for f in as_completed(futures)]
 
 # Define a tool to send an email using Gmail
 _EMAIL_RE = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
@@ -57,13 +113,16 @@ def send_email(to, subject, body):
     """send an email using gmail."""
     if not _EMAIL_RE.match(to):
         return f"Invalid recipient email address: {to}"
+    confirm = input(f"Send this email?\n\nTo: {to}\nSubject: {subject}\n\n{body}").strip().lower()
+    if confirm != 'y':
+        return "Email cancelled by user."
     # Create the email message
     message = MIMEText(body)
     message['to'] = to
     message['subject'] = subject
     raw_message = base64.urlsafe_b64encode(message.as_bytes()).decode()
     # Send the email
-    service.users().messages().send(userId='me', body={'raw': raw_message}).execute()
+    _get_service().users().messages().send(userId='me', body={'raw': raw_message}).execute()
 
     return "Email sent successfully."
 
@@ -78,21 +137,11 @@ URGENT_KEYWORDS = ['urgent', 'asap', 'important', 'action required', 'deadline',
 
 @tool
 def sort_emails():
-    """Fetch the latest 10 emails and sort them by urgency based on subject keywords."""
-    results = service.users().messages().list(userId='me', maxResults=10).execute()
-    messages = results.get('messages', [])
-
-    emails = []
-    for msg in messages:
-        msg_data = service.users().messages().get(userId='me', id=msg['id'], format='full').execute()
-        headers = msg_data['payload']['headers']
-        subject = next((h['value'] for h in headers if h['name'] == 'Subject'), '(no subject)')
-        sender = next((h['value'] for h in headers if h['name'] == 'From'), '(unknown)')
-        body = _extract_body(msg_data['payload'])
-        text = (subject + ' ' + body).lower()
-        priority = sum(1 for kw in URGENT_KEYWORDS if kw in text)
-        emails.append({'subject': subject, 'sender': sender, 'body': body, 'priority': priority})
-
+    """Fetch the latest 10 emails (subject and sender only) and sort them by urgency."""
+    emails = _fetch_email_headers()
+    for email in emails:
+        text = email['subject'].lower()
+        email['priority'] = sum(1 for kw in URGENT_KEYWORDS if kw in text)
     emails.sort(key=lambda e: e['priority'], reverse=True)
     return emails
 
@@ -103,13 +152,13 @@ def unsubscribe_from_email(sender_email: str):
     if not _EMAIL_RE.match(sender_email):
         return f"Invalid sender email address: {sender_email}"
     try:
-        results = service.users().messages().list(userId='me', q=f'from:{sender_email}', maxResults=1).execute()
+        results = _get_service().users().messages().list(userId='me', q=f'from:{sender_email}', maxResults=1).execute()
         messages = results.get('messages', [])
 
         if not messages:
             return f"No emails found from {sender_email}."
 
-        msg_data = service.users().messages().get(userId='me', id=messages[0]['id'], format='full').execute()
+        msg_data = _get_service().users().messages().get(userId='me', id=messages[0]['id'], format='full').execute()
         headers = msg_data['payload']['headers']
 
         unsubscribe_header = next(
@@ -135,7 +184,7 @@ def unsubscribe_from_email(sender_email: str):
             message['to'] = address
             message['subject'] = subject
             raw_message = base64.urlsafe_b64encode(message.as_bytes()).decode()
-            service.users().messages().send(userId='me', body={'raw': raw_message}).execute()
+            _get_service().users().messages().send(userId='me', body={'raw': raw_message}).execute()
             return f"Unsubscribe email sent to {address}."
 
         url_match = re.search(r'<(https?://[^>]+)>', unsubscribe_header)
@@ -146,3 +195,31 @@ def unsubscribe_from_email(sender_email: str):
 
     except Exception as e:
         return f"Failed to unsubscribe from {sender_email}: {type(e).__name__}: {e}"
+
+
+# Define a tool to open and read the full body of a specific email
+@tool
+def open_email(sender_email: str):
+    """Open and read the full body of the most recent email from a given sender email address."""
+    if not _EMAIL_RE.match(sender_email):
+        return f"Invalid sender email address: {sender_email}"
+
+    results = _get_service().users().messages().list(userId='me', q=f'from:{sender_email}', maxResults=1).execute()
+    messages = results.get('messages', [])
+
+    if not messages:
+        return f"No emails found from {sender_email}."
+
+    msg_data = _get_service().users().messages().get(userId='me', id=messages[0]['id'], format='full').execute()
+    headers = msg_data['payload']['headers']
+    subject = next((h['value'] for h in headers if h['name'] == 'Subject'), '(no subject)')
+    sender = next((h['value'] for h in headers if h['name'] == 'From'), '(unknown)')
+
+    confirm = input(f"Open this email?\n\nFrom: {sender}\nSubject: {subject}").strip().lower()
+    if confirm != 'y':
+        return "User declined to open the email."
+
+    body = _extract_body(msg_data['payload'])
+    if len(body) > 3000:
+        body = body[:3000] + "\n... [truncated]"
+    return f"Subject: {subject}\nFrom: {sender}\nBody:\n{body}"
