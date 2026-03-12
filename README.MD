@@ -9,10 +9,9 @@ Managing a busy inbox is time-consuming and kills productivity, especially when 
 Jean, your personal email assistant, reads your emails, sorts them by urgency, and lets you send replies and unsubscribe from senders — all through a conversational interface powered by Claude. Run her in the terminal or through a browser-based chat UI.
 
 ## Tech Stack
-- **LLM:** Anthropic Claude (claude-sonnet-4-6)
+- **LLM:** Anthropic Claude (claude-haiku-4-5)
 - **Agent Framework:** LangGraph + LangChain
 - **Email API:** Gmail API (Google OAuth 2.0)
-- **Web Interface:** Flask + vanilla HTML/JS
 - **Language:** Python 3.x
 
 ## Setup Instructions
@@ -45,16 +44,9 @@ ANTHROPIC_API_KEY=your_key_here
 
 6. Run the agent
 
-**Terminal (REPL):**
 ```bash
 python main.py
 ```
-
-**Web UI:**
-```bash
-python server.py
-```
-Then open `http://localhost:5000` in your browser.
 
 On first run, a browser window will open for Gmail OAuth login. A `token.json` file will be saved automatically for future runs.
 
@@ -64,15 +56,12 @@ email-responder/
 ├── .env                  # Anthropic API key (not committed)
 ├── .gitignore
 ├── main.py               # Terminal REPL entry point
-├── server.py             # Flask web server
 ├── requirements.txt
 ├── agent/
 │   ├── __init__.py
 │   ├── assistant.py      # Agent creation and system prompt
 │   ├── file_handler.py   # Gmail OAuth authentication
 │   └── tools.py          # Email tools
-├── static/
-│   └── index.html        # Browser chat UI
 └── tests/
     └── test_tools.py     # Unit tests
 ```
@@ -81,10 +70,11 @@ email-responder/
 
 | Tool | Description |
 |------|-------------|
-| `read_email` | Fetch the latest 10 emails by inbox category (primary, promotions, social, updates, forums) |
+| `read_email` | Fetch the latest 10 emails; optionally filter by category (primary, promotions, social, updates, forums) |
 | `sort_emails` | Fetch and rank emails by urgency keywords |
 | `open_email` | Open a specific email in full — requires your confirmation first |
 | `send_email` | Draft and send an email — shows a preview and requires your confirmation before sending |
+| `summarize_email` | Summarize the subject, sender, and body of an email |
 | `unsubscribe_from_email` | Unsubscribe from a sender via their List-Unsubscribe header |
 
 ## Running Tests
@@ -94,5 +84,4 @@ python -m pytest tests/ -v
 
 ## Future Improvements
 - Multi-agent collaboration
-- Async email processing
 - Support for email attachments
