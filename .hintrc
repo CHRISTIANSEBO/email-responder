@@ -10,7 +10,8 @@
           "scrollbar-width",
           "scrollbar-color",
           "scrollbar-width: thin",
-          "scrollbar-width: none"
+          "scrollbar-width: none",
+          "user-select"
         ]
       }
     ],
@@ -20,6 +21,9 @@
       {
         "aria-valid-attr-value": "off"
       }
-    ]
+    ],
+    "typescript-config/is-valid": "off",
+    "typescript-config/consistent-casing": "off",
+    "typescript-config/strict": "off"
   }
 }
