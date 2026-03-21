@@ -8,7 +8,11 @@ Managing a busy inbox is time-consuming. Spam and low-priority emails bury the i
 ## Solution
 Jean is a ReAct agent powered by Claude that handles your inbox through natural conversation. Read emails, sort by urgency, compose and send replies, and unsubscribe from senders — all without leaving a single interface. Actions that send or open private content require your explicit confirmation before Jean proceeds.
 
-![Jean chat interface](https://i.imgur.com/placeholder.png)
+## Demo
+
+![Jean in action](demo/research-agent-gif.gif)
+
+![Jean chat interface](demo/research-agent-demo.png)
 
 ## Tech Stack
 
