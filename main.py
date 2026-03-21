@@ -32,11 +32,18 @@ while True:
         print("Jean: Talk soon!")
         break
 
-    response = agent.invoke(
-        {"messages": [{"role": "user", "content": user_input}]},
-        config=config
-    )
-    output = response['messages'][-1].content
+    try:
+        response = agent.invoke(
+            {"messages": [{"role": "user", "content": user_input}]},
+            config=config
+        )
+        output = response['messages'][-1].content
+    except Exception as e:
+        msg = str(e)
+        if '429' in msg or 'rate_limit' in msg.lower():
+            output = "I'm being rate-limited right now. Wait a moment and try again."
+        else:
+            output = f"Something went wrong: {e}"
     print(f"\nJean: {output}\n")
 
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
