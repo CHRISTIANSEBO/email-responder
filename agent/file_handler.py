@@ -26,8 +26,13 @@ def _load_credentials() -> Credentials:
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             from google.auth.transport.requests import Request
-            creds.refresh(Request())
-        else:
+            try:
+                creds.refresh(Request())
+            except Exception:
+                # Token revoked or expired — delete it and re-authenticate
+                _TOKEN_PATH.unlink(missing_ok=True)
+                creds = None
+        if not creds:
             flow = InstalledAppFlow.from_client_secrets_file(str(_CREDENTIALS_PATH), SCOPES)
             creds = flow.run_local_server(port=0, prompt='consent')
 

@@ -180,6 +180,11 @@ def unsubscribe_from_email(sender_email: str):
                 address = unsubscribe_address
                 subject = 'Unsubscribe'
 
+            confirm = input(
+                f"Send unsubscribe email to {address} with subject '{subject}'?"
+            ).strip().lower()
+            if confirm != 'y':
+                return "Unsubscribe cancelled by user."
             message = MIMEText('')
             message['to'] = address
             message['subject'] = subject
@@ -189,6 +194,11 @@ def unsubscribe_from_email(sender_email: str):
 
         url_match = re.search(r'<(https?://[^>]+)>', unsubscribe_header)
         if url_match:
+            confirm = input(
+                f"Unsubscribe from {sender_email} via URL?\n{url_match.group(1)}"
+            ).strip().lower()
+            if confirm != 'y':
+                return "Unsubscribe cancelled by user."
             return f"To unsubscribe from {sender_email}, visit: {url_match.group(1)}"
 
         return f"Could not parse unsubscribe info from header: {unsubscribe_header}"
